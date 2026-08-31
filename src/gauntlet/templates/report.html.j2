@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>gauntlet — {{ report.suite }}</title>
+<style>
+  :root { color-scheme: light dark; --line: #d5d7db; --bad: #b3261e; --good: #1a7f37; }
+  body { font: 15px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0 auto; max-width: 60rem;
+         padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .sub { color: #6b7076; margin: 0 0 1.5rem; }
+  .cards { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.5rem; }
+  .card { border: 1px solid var(--line); border-radius: .5rem; padding: .6rem .9rem; min-width: 9rem; }
+  .card b { display: block; font-size: 1.5rem; font-weight: 600; }
+  .card span { color: #6b7076; font-size: .8rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { cursor: pointer; user-select: none; font-size: .8rem; text-transform: uppercase;
+       letter-spacing: .04em; color: #6b7076; }
+  tbody.case > tr:first-child { cursor: pointer; }
+  tbody.case tr.detail { display: none; }
+  tbody.case.open tr.detail { display: table-row; }
+  .pass { color: var(--good); }
+  .fail { color: var(--bad); font-weight: 600; }
+  pre { background: rgba(127,127,127,.12); border-radius: .4rem; margin: .3rem 0 .8rem;
+        padding: .6rem; white-space: pre-wrap; word-break: break-word; font-size: .85rem; }
+  dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: #6b7076; }
+  dd { margin: 0; }
+  .fixit { border-left: 3px solid var(--line); padding-left: .7rem; }
+</style>
+
+<h1>{{ report.suite }}</h1>
+<p class="sub">{{ report.kind }} suite against {{ report.target }}, {{ report.generated_at }}</p>
+
+<div class="cards">
+  {% if report.capability_pass_rate is not none %}
+  <div class="card"><b>{{ pct(report.capability_pass_rate) }}</b><span>capability pass rate</span></div>
+  {% endif %}
+  {% if report.overall_leak_rate is not none %}
+  <div class="card"><b>{{ pct(report.overall_leak_rate) }}</b><span>leak rate</span></div>
+  {% endif %}
+  <div class="card"><b>{{ report.counts.failed }}</b><span>failed of {{ report.counts.cases }}</span></div>
+  <div class="card"><b>{{ report.latency_p50_ms }}</b><span>p50 ms</span></div>
+  <div class="card"><b>{{ report.latency_p95_ms }}</b><span>p95 ms</span></div>
+</div>
+
+{% if report.leak_rates %}
+<h2>Leak rate by family</h2>
+<table>
+  <thead><tr><th>Family</th><th>Leak rate</th></tr></thead>
+  <tbody>
+  {% for family, rate in report.leak_rates.items() %}
+    <tr><td>{{ family }}</td><td class="{{ 'fail' if rate > 0 else 'pass' }}">{{ pct(rate) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Cases</h2>
+<p class="sub">Click a row for the full trace.</p>
+<table id="cases">
+  <thead><tr>
+    <th data-column="0">Case</th><th data-column="1">Attack</th><th data-column="2">Family</th>
+    <th data-column="3">Result</th><th data-column="4">Latency</th>
+  </tr></thead>
+  {% for case in report.cases %}
+  <tbody class="case">
+    <tr>
+      <td data-sort="{{ case.id }}">{{ case.id }}</td>
+      <td data-sort="{{ case.attack_id or '' }}">{{ case.attack_id or '—' }}</td>
+      <td data-sort="{{ case.family or '' }}">{{ case.family or '—' }}</td>
+      <td data-sort="{{ 0 if case.passed else 1 }}" class="{{ 'pass' if case.passed else 'fail' }}">
+        {{ 'pass' if case.passed else 'fail' }}
+      </td>
+      <td data-sort="{{ case.latency_ms }}">{{ case.latency_ms }} ms</td>
+    </tr>
+    <tr class="detail"><td colspan="5">
+      <dl>
+        <dt>Input</dt><dd><pre>{{ case.input }}</pre></dd>
+        <dt>Reply</dt><dd><pre>{{ case.output }}</pre></dd>
+        {% if case.tool_calls %}
+        <dt>Tool calls</dt><dd><pre>{{ tool_calls(case.tool_calls) }}</pre></dd>
+        {% endif %}
+        {% if case.error %}<dt>Error</dt><dd><pre>{{ case.error }}</pre></dd>{% endif %}
+        <dt>Assertions</dt>
+        <dd><pre>{% for a in case.assertions %}{{ a.name }}: {{ 'skipped' if a.skipped else ('pass' if a.passed else 'FAIL') }} — {{ a.detail }}
+{% endfor %}</pre></dd>
+        {% if case.remediation and not case.passed %}
+        <dt>What to change</dt><dd class="fixit">{{ case.remediation }}</dd>
+        {% endif %}
+      </dl>
+    </td></tr>
+  </tbody>
+  {% endfor %}
+</table>
+
+<script>
+  const table = document.getElementById("cases");
+  table.addEventListener("click", (event) => {
+    const head = event.target.closest("th");
+    if (head) {
+      const column = Number(head.dataset.column);
+      const bodies = [...table.querySelectorAll("tbody.case")];
+      const key = (body) => body.rows[0].cells[column].dataset.sort;
+      const ascending = table.dataset.sortedBy !== String(column);
+      bodies.sort((a, b) => key(a).localeCompare(key(b), undefined, { numeric: true }));
+      if (!ascending) bodies.reverse();
+      table.dataset.sortedBy = ascending ? String(column) : "";
+      bodies.forEach((body) => table.appendChild(body));
+      return;
+    }
+    const body = event.target.closest("tbody.case");
+    if (body && !event.target.closest("tr.detail")) body.classList.toggle("open");
+  });
+</script>
