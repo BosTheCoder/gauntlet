@@ -1,0 +1,97 @@
+# MANAGED BY demo-tools — DO NOT EDIT. Run `just sync` to update.
+#
+# Shared helpers for the `local` deploy target (persistent container on this
+# machine, exposed over Tailscale HTTPS). Sourced by the verb scripts in this
+# directory — not executed directly.
+set -euo pipefail
+
+APP="bos-gauntlet"
+# The HOST-published port (compose maps host:container), which is what Tailscale
+# serve proxies to — NOT the port inside the container. It was previously named
+# after the container port, which invited hand-edits here that the next sync
+# silently reverted. Set the `host_port` answer instead of editing this line.
+HOST_PORT="8080"
+TS_HOST="bos-desktop.fish-grouper.ts.net"
+TS_PATH="/gauntlet"
+URL="https://${TS_HOST}${TS_PATH}"
+
+# Base compose + the local overlay (restart policy + bind-mount + ROOT_PATH).
+COMPOSE=(docker compose -f compose.yml -f compose.local.yml)
+SVC="app"
+
+# Resolve the Windows Tailscale CLI from WSL. The explicit /mnt/c path is safest
+# — the space in "Program Files" trips unquoted PATH lookups; fall back to a
+# PATH-resolved tailscale.exe only if the default install location moved.
+resolve_ts() {
+  if [[ -x "/mnt/c/Program Files/Tailscale/tailscale.exe" ]]; then
+    TS=("/mnt/c/Program Files/Tailscale/tailscale.exe")
+  elif command -v tailscale.exe >/dev/null 2>&1; then
+    TS=(tailscale.exe)
+  else
+    echo "ERROR: Tailscale CLI not found. This target only works on Bos-Desktop." >&2
+    exit 1
+  fi
+}
+
+# Fail early with a clear message if either half of the mechanism is down.
+preflight() {
+  resolve_ts
+  "${TS[@]}" status >/dev/null 2>&1 || { echo "ERROR: Tailscale is not running on the Windows host." >&2; exit 1; }
+  docker info >/dev/null 2>&1 || { echo "ERROR: Docker Desktop is not running." >&2; exit 1; }
+}
+
+# Current `tailscale serve` config (empty string if unavailable).
+#
+# The WSL->Windows interop call fails intermittently on this host
+# (`UtilAcceptVsock ... accept4 failed 110`), returning 0 bytes with exit 0 —
+# observed 4 empty results in 5 consecutive calls. Retry rather than trust a
+# single read, because every predicate below is derived from this output.
+serve_status() {
+  local out i
+  for i in 1 2 3; do
+    out="$("${TS[@]}" serve status 2>/dev/null || true)"
+    [[ -n "$out" ]] && { printf '%s' "$out"; return 0; }
+    sleep 1
+  done
+  printf ''
+}
+
+# The predicates below take the status as an ARGUMENT. They used to each call
+# serve_status themselves, so one conflict check ran the flaky command twice: if
+# the first read succeeded and the second came back empty, serve_path_registered
+# said "no" and the caller wrongly concluded a different backend owned the path,
+# aborting the deploy with:
+#   ERROR: /foo is already served by a different backend.
+# Read once, decide from that one snapshot.
+
+# True when TS_PATH is already served AND points at our container's port.
+# Re-deploys of a registered app hit this and skip the (admin-gated) serve write.
+serve_path_registered() {
+  printf '%s' "$1" | grep -qE "(^|[[:space:]])${TS_PATH}[[:space:]]+proxy[[:space:]]+https?://127\.0\.0\.1:${HOST_PORT}(\b|/|$)"
+}
+
+# True when TS_PATH is served by a DIFFERENT backend (a real conflict, e.g. /calibre).
+# Empty status means "couldn't read it", NOT "someone else owns the path" — never
+# fail a deploy on a failed read.
+serve_path_conflict() {
+  [[ -n "$1" ]] || return 1
+  printf '%s' "$1" | grep -qE "(^|[[:space:]])${TS_PATH}[[:space:]]" && ! serve_path_registered "$1"
+}
+
+# Writing `tailscale serve` config requires Windows local admin (verified on
+# Tailscale 1.98.x — path AND own-port serves both need it). Everyday deploys of
+# an already-registered app skip this entirely, so admin is a one-time-per-app
+# cost. Run the write elevated via Start-Process (UAC); blocks on approval.
+# Args: the `tailscale serve` arguments (e.g. --bg --set-path /foo 8000).
+TS_WIN='C:\Program Files\Tailscale\tailscale.exe'
+ts_serve_elevated() {
+  local ps_args="'serve'" a
+  for a in "$@"; do ps_args="${ps_args},'${a}'"; done
+  powershell.exe -NoProfile -Command \
+    "Start-Process -FilePath '${TS_WIN}' -ArgumentList @(${ps_args}) -Verb RunAs -Wait"
+}
+
+# True when the app service's container is up (used for friendly hints).
+container_running() {
+  [[ -n "$("${COMPOSE[@]}" ps -q "$SVC" 2>/dev/null)" ]]
+}

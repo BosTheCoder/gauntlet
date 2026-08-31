@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+build
+__pycache__
+.venv
+.git
+.env
+.env.local
+*.db
+infra/
+compose.yml

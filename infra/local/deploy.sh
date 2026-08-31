@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# MANAGED BY demo-tools — DO NOT EDIT. Run `just sync` to update.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"; source "$HERE/_lib.sh"
+preflight
+
+# Read the serve config ONCE and decide from that snapshot — re-reading per
+# predicate made a flaky interop call able to contradict itself mid-check.
+TS_STATUS="$(serve_status)"
+
+# Refuse to clobber a path already served by a different backend.
+if serve_path_conflict "$TS_STATUS"; then
+  echo "ERROR: ${TS_PATH} is already served by a different backend." >&2
+  echo "Choose another path (re-scaffold with --tailscale-path /<other>) or free it:" >&2
+  echo "  tailscale serve --set-path ${TS_PATH} off   (elevated)" >&2
+  exit 1
+fi
+
+echo "==> Building + starting container (detached)"
+# --force-recreate because `up -d --build` alone has been observed leaving the
+# previous container running against the previous image: the new image is built,
+# compose reports "Running", and the deploy silently serves stale code. A redeploy
+# should always run what was just built, and recreating costs about a second.
+"${COMPOSE[@]}" up -d --build --force-recreate
+
+if serve_path_registered "$TS_STATUS"; then
+  echo "==> Tailscale path ${TS_PATH} already registered — no admin needed."
+else
+  echo "==> Registering Tailscale serve: ${TS_PATH} -> 127.0.0.1:${HOST_PORT}"
+  echo "    First-time registration for this app — approve the Windows UAC prompt."
+  # Exact form matches the working Calibre invocation: bare port arg.
+  ts_serve_elevated --bg --set-path "${TS_PATH}" "${HOST_PORT}" || true
+  # Fresh read — we just changed the config, so the snapshot above is stale.
+  if ! serve_path_registered "$(serve_status)"; then
+    echo "ERROR: serve registration did not take effect (UAC declined, or no desktop session)." >&2
+    echo "Run this once in an elevated Windows terminal, then re-run 'just deploy':" >&2
+    echo "  tailscale serve --bg --set-path ${TS_PATH} ${HOST_PORT}" >&2
+    exit 1
+  fi
+fi
+
+echo
+echo "Deployed (tailnet-only):"
+echo "  ${URL}"

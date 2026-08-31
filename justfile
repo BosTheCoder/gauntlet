@@ -34,5 +34,12 @@ demo port="8080":
     GAUNTLET_DEMO_DELAY_MS=120 uv run uvicorn gauntlet.demo.app:app --reload \
         --host 127.0.0.1 --port {{port}}
 
+# Deploy the demo to Fly. Infra scripts come from demo-tools.
 deploy:
-    flyctl deploy
+    bash infra/fly/deploy.sh
+
+status:
+    bash infra/fly/status.sh
+
+logs:
+    bash infra/fly/logs.sh

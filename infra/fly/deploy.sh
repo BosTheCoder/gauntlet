@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# MANAGED BY demo-tools — DO NOT EDIT. Run `just sync` to update.
+set -euo pipefail
+
+APP="bos-gauntlet"
+
+# Public hostnames this app answers on, from the `hostnames` answer. Defaults
+# to the one demo subdomain; an app that owns real domains lists them instead,
+# and an empty list means "just deploy" — no DNS, no certs.
+HOSTNAMES=("gauntlet.demos.buildwithbos.com")
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# Idempotent: fly deploy does not auto-create the app on first run.
+ensure_app() {
+    local app="$1"
+    if ! fly status --app "$app" >/dev/null 2>&1; then
+        echo "==> Creating Fly app $app"
+        fly apps create "$app" --org personal
+    fi
+}
+
+# Add only the certs that are missing. `fly certs add` on a hostname that is
+# already there is harmless, but asking first keeps a re-deploy quiet and stops
+# a transient API error from burning the 3x30s retry budget for no reason.
+ensure_certs() {
+    local app="$1"
+    shift
+    local have host
+    have=$(fly certs list --app "$app" --json 2>/dev/null \
+        | python3 -c "
+import json, sys
+try:
+    print(' '.join(c['hostname'] for c in json.load(sys.stdin)))
+except Exception:
+    print('')
+" || echo "")
+
+    for host in "$@"; do
+        if [[ " $have " == *" $host "* ]]; then
+            echo "==> Cert for $host already present"
+            continue
+        fi
+        echo "==> Ensuring TLS cert for $host"
+        for attempt in 1 2 3; do
+            if fly certs add --app "$app" "$host" 2>&1; then
+                break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+                echo "ERROR: failed to provision cert for $host after 3 attempts."
+                echo "If you're not using Cloudflare DNS automation, add A/AAAA records"
+                echo "in your DNS provider for $host pointing at \`fly ips list -a $app\`."
+                return 1
+            fi
+            echo "cert add attempt $attempt failed, sleeping 30s..."
+            sleep 30
+        done
+    done
+}
+
+# DNS + certs for every hostname, against whichever app owns the public IPs.
+publish_hostnames() {
+    local app="$1"
+    # Emptiness via [*] rather than the array-length form: this file is a Jinja
+    # template, and dollar-brace-hash opens a Jinja comment.
+    if [[ -z "${HOSTNAMES[*]:-}" ]]; then
+        echo "==> No hostnames configured; skipping DNS and certs"
+        return 0
+    fi
+    bash "$HERE/cloudflare_dns.sh" "$app" "${HOSTNAMES[@]}"
+    ensure_certs "$app" "${HOSTNAMES[@]}"
+}
+
+print_urls() {
+    local fly_host="$1" host
+    echo
+    echo "Deployed:"
+    echo "  https://${fly_host}"
+    for host in ${HOSTNAMES[@]+"${HOSTNAMES[@]}"}; do
+        echo "  https://${host}"
+    done
+}
+
+ensure_app "$APP"
+
+echo "==> Deploying $APP"
+fly deploy --app "$APP" --remote-only
+
+publish_hostnames "$APP"
+print_urls "${APP}.fly.dev"
