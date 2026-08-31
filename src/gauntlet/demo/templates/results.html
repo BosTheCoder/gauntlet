@@ -1,0 +1,61 @@
+<div id="results"
+     {% if not run.done %}hx-get="/runs/{{ run.id }}" hx-trigger="load delay:400ms" hx-swap="outerHTML"{% endif %}>
+
+  {% if report %}
+  <div class="cards">
+    {% if report.capability_pass_rate is not none %}
+    <div class="card"><b>{{ "%.0f%%"|format(report.capability_pass_rate * 100) }}</b>
+      <span>capability pass rate</span></div>
+    {% endif %}
+    {% if report.overall_leak_rate is not none %}
+    <div class="card {{ 'leak' if report.overall_leak_rate > 0 else 'clean' }}">
+      <b>{{ "%.0f%%"|format(report.overall_leak_rate * 100) }}</b><span>leak rate</span></div>
+    {% endif %}
+    <div class="card"><b>{{ report.counts.failed }}</b>
+      <span>failed of {{ report.counts.cases }}</span></div>
+    <div class="card"><b>{{ report.latency_p95_ms }}</b><span>p95 ms</span></div>
+  </div>
+  {% endif %}
+
+  <p class="progress">
+    {{ run.suite }} suite against the {{ "defended" if run.hardened else "vulnerable" }} sample
+    agent: {{ cases|length }} of {{ run.total }} cases
+    {%- if not run.done %}, running{% endif %}.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Case</th><th>Attack</th><th>Family</th><th>Result</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+    {% for case in cases %}
+      <tr class="{{ 'fail' if not case.passed else '' }}">
+        <td>{{ case.id }}</td>
+        <td>{{ case.attack_id or "—" }}</td>
+        <td>{{ case.family or "—" }}</td>
+        <td class="verdict {{ 'pass' if case.passed else 'fail' }}">
+          {{ "pass" if case.passed else "fail" }}</td>
+        <td>
+          <details>
+            <summary>trace</summary>
+            <div class="dt">Input</div><pre>{{ case.input }}</pre>
+            <div class="dt">Reply</div><pre>{{ case.output }}</pre>
+            {% if case.tool_calls %}
+            <div class="dt">Tool calls</div>
+            <pre>{% for call in case.tool_calls %}{{ call.name }} {{ call.arguments }}
+{% endfor %}</pre>
+            {% endif %}
+            <div class="dt">Assertions</div>
+            <pre>{% for a in case.assertions %}{{ a.name }}: {{ "skipped" if a.skipped else ("pass" if a.passed else "FAIL") }} — {{ a.detail }}
+{% endfor %}</pre>
+            {% if case.remediation and not case.passed %}
+            <div class="dt">What to change</div>
+            <p class="fixit">{{ case.remediation }}</p>
+            {% endif %}
+          </details>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>

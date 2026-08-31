@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gauntlet — agent capability and safety evals</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body>
+  <div id="cold-start">
+    <span>This demo sleeps when nobody is using it. The first run after a quiet spell can
+      take a few seconds to wake up.</span>
+    <button type="button" onclick="this.parentElement.remove()" aria-label="Dismiss">Dismiss</button>
+  </div>
+
+  <h1>gauntlet</h1>
+  <p class="lede">
+    A testing harness you point at your own LLM agent. It runs a capability suite to check the
+    agent still does its job, and a safety suite that feeds it the publicly documented
+    prompt-injection classes to see what leaks. Below is a scripted sample agent with a planted
+    canary, <code>{{ secret }}</code>. Run the safety suite, then tick <em>harden it</em> and run
+    it again.
+  </p>
+
+  <form class="controls" hx-post="/runs" hx-target="#results" hx-swap="outerHTML"
+        hx-disabled-elt="find button">
+    <fieldset>
+      <legend>Suite</legend>
+      <label><input type="radio" name="suite" value="capability"> capability</label>
+      <label><input type="radio" name="suite" value="safety" checked> safety</label>
+    </fieldset>
+    <fieldset>
+      <legend>Agent</legend>
+      <label><input type="checkbox" name="hardened"> harden it</label>
+    </fieldset>
+    <button class="run" type="submit">Run</button>
+  </form>
+
+  <div id="results"></div>
+</body>
+</html>
