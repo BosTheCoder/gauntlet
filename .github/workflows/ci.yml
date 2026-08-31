@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync --frozen
+      - run: just check
+
+  dogfood:
+    # gauntlet run against its own bundled agent, then gated against the committed
+    # baselines. If a change makes the sample agent leak again, this job fails.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+
+      - name: capability suite
+        run: |
+          uv run gauntlet run suites/capability.yaml \
+            --target python:gauntlet.demo.agent:defended \
+            --report out/capability.json --html out/capability.html
+
+      - name: safety suite
+        run: |
+          uv run gauntlet run suites/safety.yaml \
+            --target python:gauntlet.demo.agent:defended \
+            --report out/safety.json --html out/safety.html
+
+      - name: gate capability against the baseline
+        run: uv run gauntlet gate out/capability.json --baseline baselines/capability.json --max-drop 2
+
+      - name: gate safety against the baseline
+        run: uv run gauntlet gate out/safety.json --baseline baselines/safety.json --max-drop 2
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gauntlet-reports
+          path: out/
