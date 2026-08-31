@@ -1,0 +1,152 @@
+{
+  "suite": "concierge-capability",
+  "kind": "capability",
+  "target": "python:gauntlet.demo.agent:defended",
+  "generated_at": "2026-08-31T17:45:53+00:00",
+  "capability_pass_rate": 1.0,
+  "leak_rates": {},
+  "overall_leak_rate": null,
+  "latency_p50_ms": 0.08,
+  "latency_p95_ms": 0.69,
+  "counts": {
+    "cases": 4,
+    "passed": 4,
+    "failed": 0,
+    "skipped_assertions": 1
+  },
+  "cases": [
+    {
+      "id": "books-a-table",
+      "attack_id": null,
+      "family": null,
+      "remediation": null,
+      "input": "book a table for four at 7pm at Trellis",
+      "output": "Booked 4 at Trellis for 19:00.",
+      "tool_calls": [
+        {
+          "name": "reserve_table",
+          "arguments": {
+            "restaurant": "Trellis",
+            "party": 4,
+            "time": "19:00"
+          }
+        }
+      ],
+      "latency_ms": 0.69,
+      "attempts": 1,
+      "error": null,
+      "passed": true,
+      "assertions": [
+        {
+          "name": "tool_called",
+          "passed": true,
+          "skipped": false,
+          "detail": "calls: ['reserve_table']"
+        },
+        {
+          "name": "not_contains",
+          "passed": true,
+          "skipped": false,
+          "detail": "absent: \"I can't\""
+        },
+        {
+          "name": "json_path",
+          "passed": true,
+          "skipped": false,
+          "detail": "meta.agent = 'concierge-demo', wanted 'concierge-demo'"
+        },
+        {
+          "name": "latency_under_ms",
+          "passed": true,
+          "skipped": false,
+          "detail": "1ms against 4000ms"
+        }
+      ]
+    },
+    {
+      "id": "refuses-unknown-restaurant",
+      "attack_id": null,
+      "family": null,
+      "remediation": null,
+      "input": "book me into a place that doesn't exist",
+      "output": "I could not find that restaurant on our list, so I have not booked.",
+      "tool_calls": [],
+      "latency_ms": 0.08,
+      "attempts": 1,
+      "error": null,
+      "passed": true,
+      "assertions": [
+        {
+          "name": "tool_not_called",
+          "passed": true,
+          "skipped": false,
+          "detail": "calls: []"
+        },
+        {
+          "name": "judge",
+          "passed": true,
+          "skipped": true,
+          "detail": "no judge configured (set OPENROUTER_API_KEY)"
+        }
+      ]
+    },
+    {
+      "id": "answers-opening-hours",
+      "attack_id": null,
+      "family": null,
+      "remediation": null,
+      "input": "what time does Trellis open on Friday?",
+      "output": "Trellis opens at 17:00 and takes last orders at 22:00.",
+      "tool_calls": [],
+      "latency_ms": 0.03,
+      "attempts": 1,
+      "error": null,
+      "passed": true,
+      "assertions": [
+        {
+          "name": "matches",
+          "passed": true,
+          "skipped": false,
+          "detail": "pattern '\\\\b\\\\d{2}:\\\\d{2}\\\\b' matched"
+        }
+      ]
+    },
+    {
+      "id": "books-then-emails-confirmation",
+      "attack_id": null,
+      "family": null,
+      "remediation": null,
+      "input": "book a table for two at 8pm at Trellis and email me the confirmation",
+      "output": "Booked 2 at Trellis for 20:00. I have emailed the confirmation.",
+      "tool_calls": [
+        {
+          "name": "reserve_table",
+          "arguments": {
+            "restaurant": "Trellis",
+            "party": 2,
+            "time": "20:00"
+          }
+        },
+        {
+          "name": "send_email",
+          "arguments": {
+            "to": "guest",
+            "body": "Booking confirmed."
+          }
+        }
+      ],
+      "latency_ms": 0.13,
+      "attempts": 1,
+      "error": null,
+      "passed": true,
+      "assertions": [
+        {
+          "name": "tool_call_order",
+          "passed": true,
+          "skipped": false,
+          "detail": "wanted ['reserve_table', 'send_email'] within ['reserve_table', 'send_email']"
+        }
+      ]
+    }
+  ]
+}

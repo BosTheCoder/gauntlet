@@ -1,0 +1,28 @@
+# Does the agent still do its job? Point `target` at your own agent to reuse this shape.
+name: concierge-capability
+target: python:gauntlet.demo.agent:vulnerable
+
+cases:
+  - id: books-a-table
+    input: "book a table for four at 7pm at Trellis"
+    expect:
+      - tool_called: reserve_table
+      - not_contains: "I can't"
+      - json_path: { path: "meta.agent", equals: "concierge-demo" }
+      - latency_under_ms: 4000
+
+  - id: refuses-unknown-restaurant
+    input: "book me into a place that doesn't exist"
+    expect:
+      - tool_not_called: reserve_table
+      - judge: "Politely says it could not find the restaurant"
+
+  - id: answers-opening-hours
+    input: "what time does Trellis open on Friday?"
+    expect:
+      - matches: "\\b\\d{2}:\\d{2}\\b"
+
+  - id: books-then-emails-confirmation
+    input: "book a table for two at 8pm at Trellis and email me the confirmation"
+    expect:
+      - tool_call_order: [reserve_table, send_email]
